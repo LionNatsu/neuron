@@ -5,61 +5,75 @@ dataset_label = [
 ]
 
 # Equilibrium: Na+, K+, Cl-, A-
-dataset = [
+dataset_eq = torch.tensor([
     [0, 1, 117, 30],
     [1, 1, 3, 90],
     [1, -1, 120, 4],
     [0, -1, 0, 116]
-]
+], dtype=torch.float)
 
 # Lower the concentration of Cl-
-dataset = [
+dataset_lo_cl = torch.tensor([
     [0, 1, 117, 30],
     [1, 1, 3, 90],
     [1, -1, 60, 4],
     [0, -1, 60, 116]
-]
+], dtype=torch.float)
 
 # Increase the concentration of K+
-dataset = [
+dataset_hi_k = torch.tensor([
     [0, 1, 114, 30],
     [1, 1, 6, 90],
     [1, -1, 120, 4],
     [0, -1, 0, 116],
-]
+], dtype=torch.float)
 
-ions = torch.tensor(dataset, dtype=torch.float)
-while True:
+
+def calc_potential(ions):
     # Potentials per ion (Nernst equation)
-    E = 58 * (ions[:, 2:4] + 1e-10).log10().diff().T[0] * ions[:, 1]
-
+    inside_outside = ions[:, 2:4]
+    charge = ions[:, 1]
+    permeability = ions[:, 0]
+    electrode_potential = -58 * (inside_outside + 1e-10).log10().diff().T[0] * charge
     # Overall voltage
-    V = (ions[:, 0] * E).sum() / ions[:, 0].sum()
+    voltage = (permeability * electrode_potential).sum() / permeability.sum()
+    return electrode_potential, voltage
 
-    # Currents per ion
-    i = ions[:, 0] * (V - E)
 
-    # Osmotic pressure difference is proportional to mmol/L.
-    P = ions[:, 2].sum() - ions[:, 3].sum()
+def iterate(ions):
+    while True:
+        E, V = calc_potential(ions)
 
-    print('S:', V, ions[:, 3])
-    print('i:', i)
-    print('P:', P)
+        # Currents per ion
+        i = ions[:, 0] * (V - E)
 
-    inside = ions[:, 3]
+        # Osmotic pressure difference is proportional to mmol/L.
+        P = ions[:, 2].sum() - ions[:, 3].sum()
 
-    # Ions flow in or out, proportional to currents
-    step_ions = 0.2
-    # A reasonable approximation: do not change outside at all.
-    # Only change the inside concentration.
-    new_inside = inside + step_ions * i / ions[:, 1]
+        print('---')
+        print('concn\t', ions[:, 3])
+        print('poten\t', E)
+        print('voltg\t', V)
+        print('osmtp\t', P)
+        print('crrnt\t', i)
 
-    step_water = 0.005
-    # Water balances osmotic pressure.
-    # Use atan function to compress the range even harder.
-    new_inside *= 1 + step_water * P.atan()
+        inside = ions[:, 3]
 
-    if (new_inside - inside).norm(p=1) < 0.05:
-        break
+        # Ions flow in or out, proportional to currents
+        step_ions = 0.2
+        # A reasonable approximation: do not change outside at all.
+        # Only change the inside concentration.
+        new_inside = inside - step_ions * i / ions[:, 1]
 
-    ions[:, 3] = new_inside
+        step_water = 0.005
+        # Water balances osmotic pressure.
+        # Use atan function to compress the range even harder.
+        new_inside *= 1 + step_water * P.atan()
+
+        if (new_inside - inside).norm(p=1) < 0.05:
+            break
+
+        ions[:, 3] = new_inside
+
+
+iterate(dataset_lo_cl)
