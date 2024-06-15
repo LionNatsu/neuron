@@ -39,6 +39,7 @@ while True:
     # Currents per ion
     i = ions[:, 0] * (V - E)
 
+    # Osmotic pressure difference is proportional to mmol/L.
     P = ions[:, 2].sum() - ions[:, 3].sum()
 
     print('S:', V, ions[:, 3])
@@ -54,7 +55,8 @@ while True:
     new_inside = inside + step_ions * i / ions[:, 1]
 
     step_water = 0.005
-    # Water balances osmotic pressure
+    # Water balances osmotic pressure.
+    # Use atan function to compress the range even harder.
     new_inside *= 1 + step_water * P.atan()
 
     if (new_inside - inside).norm(p=1) < 0.05:
