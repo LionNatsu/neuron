@@ -1,79 +1,70 @@
-import torch
+#import torch
+import numpy as np
+import matplotlib
+import matplotlib.pyplot as plt
+matplotlib.use("TkAgg")
 
-dataset_label = [
-    'permeability', 'charge', 'outside(mmol/L)', 'inside(mmol/L)',
-]
+V, n, m, h = 0, 0.3181736168219989, 0.0531348913086363, 0.5875799149114899
 
-# Equilibrium: Na+, K+, Cl-, A-
-dataset_eq = torch.tensor([
-    [0, 1, 117, 30],
-    [1, 1, 3, 90],
-    [1, -1, 120, 4],
-    [0, -1, 0, 116]
-], dtype=torch.float)
+C = 1.0
 
-# Lower the concentration of Cl-
-dataset_lo_cl = torch.tensor([
-    [0, 1, 117, 30],
-    [1, 1, 3, 90],
-    [1, -1, 60, 4],
-    [0, -1, 60, 116]
-], dtype=torch.float)
+gK, gNa, gL = 36, 120, 0.3
+EK, ENa, EL = -12, 120, 10.6
 
-# Increase the concentration of K+
-dataset_hi_k = torch.tensor([
-    [0, 1, 114, 30],
-    [1, 1, 6, 90],
-    [1, -1, 120, 4],
-    [0, -1, 0, 116],
-], dtype=torch.float)
+emu_rate = 0.001
+min_step = 0.01
 
+t = -10.0
+step = 0
+t_all = []
+V_all = []
 
-def calc_potential(ions):
-    # Potentials per ion (Nernst equation)
-    inside_outside = ions[:, 2:4]
-    charge = ions[:, 1]
-    permeability = ions[:, 0]
-    electrode_potential = -58 * (inside_outside + 1e-10).log10().diff().T[0] * charge
-    # Overall voltage
-    voltage = (permeability * electrode_potential).sum() / permeability.sum()
-    return electrode_potential, voltage
+while True:
+    print(V, n, m, h)
 
+    if 0 <= t and step % 10 == 0:
+        t_all.append(t)
+        V_all.append(V)
 
-def iterate(ions):
-    while True:
-        E, V = calc_potential(ions)
+    if 10 <= t < 10.5:
+        I = 20.0
+    else:
+        I = 0
 
-        # Currents per ion
-        i = ions[:, 0] * (V - E)
+    if step % 1000 == 0:
+        plt.plot(t_all, V_all, color='blue')
+        plt.pause(0.001)
 
-        # Osmotic pressure difference is proportional to mmol/L.
-        P = ions[:, 2].sum() - ions[:, 3].sum()
+    V_dot = I - gK * n ** 4 * (V - EK) - gNa * m ** 3 * h * (V - ENa) - gL * (V - EL)
 
-        print('---')
-        print('concn\t', ions[:, 3])
-        print('poten\t', E)
-        print('voltg\t', V)
-        print('osmtp\t', P)
-        print('crrnt\t', i)
+    alpha_n = lambda V: 0.01 * (10 - V) / (np.exp((10 - V) / 10) - 1)
+    beta_n = lambda V: 0.125 * np.exp(-V / 80)
+    alpha_m = lambda V: 0.1 * (25 - V) / (np.exp((25 - V) / 10) - 1)
+    beta_m = lambda V: 4 * np.exp(-V / 18)
+    alpha_h = lambda V: 0.07 * np.exp(- V)
+    beta_h = lambda V: 1 / (np.exp((30 - V) / 10) + 1)
 
-        inside = ions[:, 3]
+    n_dot = alpha_n(V) * (1 - n) - beta_n(V) * n
+    m_dot = alpha_m(V) * (1 - m) - beta_m(V) * m
+    h_dot = alpha_h(V) * (1 - h) - beta_h(V) * h
 
-        # Ions flow in or out, proportional to currents
-        step_ions = 0.2
-        # A reasonable approximation: do not change outside at all.
-        # Only change the inside concentration.
-        new_inside = inside - step_ions * i / ions[:, 1]
+    if t > 50: # np.abs(np.array([V_dot, n_dot, m_dot, h_dot])).max() < min_step:
+        break
 
-        step_water = 0.005
-        # Water balances osmotic pressure.
-        # Use atan function to compress the range even harder.
-        new_inside *= 1 + step_water * P.atan()
+    if np.isnan(V_dot):
+        break
 
-        if (new_inside - inside).norm(p=1) < 0.05:
-            break
+    V += V_dot * emu_rate
+    n += n_dot * emu_rate
+    m += m_dot * emu_rate
+    h += h_dot * emu_rate
+    t += emu_rate
+    step += 1
 
-        ions[:, 3] = new_inside
+    n = np.clip(n, 0, 1)
+    m = np.clip(m, 0, 1)
+    h = np.clip(h, 0, 1)
 
-
-iterate(dataset_lo_cl)
+plt.plot(t_all, V_all, color='blue')
+plt.pause(0.001)
+plt.show()
