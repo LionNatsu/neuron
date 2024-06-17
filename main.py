@@ -1,69 +1,86 @@
 import torch
-import numpy as np
+import torch.special
 import matplotlib
 import matplotlib.pyplot as plt
-matplotlib.use("TkAgg")
+import seaborn as sns
 
-V, n, m, h = -65, 0.3181736168219989, 0.0531348913086363, 0.5875799149114899
+matplotlib.use("TkAgg")
+palette = sns.color_palette("rocket_r")
+torch.set_printoptions(precision=2, sci_mode=False)
+torch.set_default_device('cuda')
+
+V = torch.tensor([
+    [-68.00],
+    [-68.00],
+    [-68.00],
+    [-68.00]])
+
+M = torch.tensor([
+    [0.3, 0.0, 0.8],
+    [0.4, 0.0, 0.8],
+    [0.5, 0.0, 0.8],
+    [0.5, 0.0, 0.6],
+])
+
+I_external = torch.zeros_like(V)
+
+T_current = torch.tensor([
+    [-77.00, 36.00],
+    [55.00, 120.00],
+    [-54.40, 0.30]]).T
+
+T_gating_inf = torch.tensor([
+    [-53.00, 1 / 15.00],
+    [-40.00, 1 / 15.00],
+    [-62.00, 1 / -7.00]]).T
+
+T_gating_tau = torch.tensor([
+    [-79.00, 1 / 50.00, 4.70, 1.10],
+    [-38.00, 1 / 30.00, 0.46, 0.04],
+    [-67.00, 1 / 20.00, 7.40, 1.20]]).T
 
 C = 1.0
-I = 0
-
-gK, gNa, gL = 36, 120, 0.3
-EK, ENa, EL = -77, 55, -54.4
-
-emu_rate = 0.001
-min_step = 0.01
+time_step = 0.01
 
 t = 0
 step = 0
-t_all = []
-V_all = []
+data = {
+    'time': [],
+    'voltage': [],
+    'exp': [],
+}
 
-def gating_var_inf(voltage: torch.Tensor, half_voltage, slope_factor):
-    return voltage.sub(half_voltage).mul(-1.0 / slope_factor).exp().add(1).reciprocal()
-def gating_var_tau(voltage: torch.Tensor, max_voltage, deviation, tau_base, tau_amp):
-    return voltage.sub(max_voltage).square().mul(-1.0 / deviation ** 2).exp().mul(tau_amp).add(tau_base)
 
 while True:
-    print(V, n, m, h)
 
     if 0 <= t and step % 10 == 0:
-        t_all.append(t)
-        V_all.append(V)
+        for i in range(V.shape[0]):
+            data['time'].append(t)
+            data['voltage'].append(V[i].item())
+            data['exp'].append(i)
 
-    if 10 <= t < 10.5:
-        I = 20.0
-    else:
-        I = 0
+    if step % 100 == 0:
+        print(round(t), step, V.T)
 
-    if step % 1000 == 0:
-        plt.plot(t_all, V_all, color='blue')
-        plt.pause(0.001)
+    I = (V - T_current[0]) * T_current[1]
+    G = torch.vstack([M[:, 0].pow(4), M[:, 1].pow(3) * M[:, 2], torch.ones(M.shape[0])]).T
+    V_dot = (I_external - (I * G).sum(dim=1).unsqueeze(1)).div(C)
 
-    V_dot = I - gK * n ** 4 * (V - EK) - gNa * m ** 3 * h * (V - ENa) - gL * (V - EL)
-    Vt = torch.tensor(V)
-    n_dot = gating_var_inf(Vt, -53, 15).sub(n).div(gating_var_tau(Vt, -79, 50, 4.7, 1.1)).item()
-    m_dot = gating_var_inf(Vt, -40, 15).sub(m).div(gating_var_tau(Vt, -38, 30, 0.46, 0.04)).item()
-    h_dot = gating_var_inf(Vt, -62, -7).sub(h).div(gating_var_tau(Vt, -67, 20, 7.4, 1.2)).item()
+    gating_inf = torch.special.expit((V - T_gating_inf[0]) * T_gating_inf[1])
+    gating_tau = (((V - T_gating_tau[0]) * T_gating_tau[1]).square().mul(-1).exp() * T_gating_tau[2] + T_gating_tau[3])
+    M_dot = (gating_inf - M) / gating_tau
 
-    if t > 50: # np.abs(np.array([V_dot, n_dot, m_dot, h_dot])).max() < min_step:
+
+    if t > 50:
         break
 
-    if np.isnan(V_dot):
-        break
+    V = V + V_dot * time_step
+    M = (M + M_dot * time_step).clip(0, 1)
 
-    V += V_dot * emu_rate
-    n += n_dot * emu_rate
-    m += m_dot * emu_rate
-    h += h_dot * emu_rate
-    t += emu_rate
+    t += time_step
     step += 1
 
-    n = np.clip(n, 0, 1)
-    m = np.clip(m, 0, 1)
-    h = np.clip(h, 0, 1)
-
-plt.plot(t_all, V_all, color='blue')
-plt.pause(0.001)
+sns.relplot(data=data, x='time', y='voltage', hue='exp', palette=palette, kind='line')
+print(V)
+print(M)
 plt.show()
