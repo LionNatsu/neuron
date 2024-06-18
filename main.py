@@ -3,17 +3,17 @@ import numpy as np
 import torch
 import torch.special
 import torchvision.transforms
-import matplotlib
-import matplotlib.pyplot as plt
-import seaborn as sns
+# import matplotlib
+# import matplotlib.pyplot as plt
+# import seaborn as sns
 import time
 
-matplotlib.use("TkAgg")
-palette = sns.color_palette("rocket_r")
 torch.set_printoptions(precision=2, sci_mode=False)
 # torch.set_default_dtype(torch.bfloat16)
 torch.set_default_device('cuda')
 torch.manual_seed(0)
+# matplotlib.use("TkAgg")
+# palette = sns.color_palette("rocket_r")
 
 N = 1000
 
